@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Action to view all Reverse transfers -->
+    <record id="action_picking_reverse" model="ir.actions.act_window">
+        <field name="name">Реверси</field>
+        <field name="res_model">stock.picking</field>
+        <field name="view_mode">list,kanban,form,calendar</field>
+        <field name="domain">[('picking_type_id.name', '=', 'Реверс')]</field>
+        <field name="context">{
+            'default_picking_type_id': False,
+            'search_default_todo': 1,
+        }</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Нема реверси
+            </p>
+            <p>
+                Креирајте нов реверс за да евидентирате позајмување на опрема.
+            </p>
+        </field>
+    </record>
+
+    <!-- Action to view Reverse Returns -->
+    <record id="action_picking_reverse_return" model="ir.actions.act_window">
+        <field name="name">Враќања на Реверси</field>
+        <field name="res_model">stock.picking</field>
+        <field name="view_mode">list,kanban,form,calendar</field>
+        <field name="domain">[('picking_type_id.name', '=', 'Враќање на Реверс')]</field>
+        <field name="context">{
+            'search_default_todo': 1,
+        }</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Нема враќања
+            </p>
+            <p>
+                Враќањата се креираат автоматски при враќање на опрема.
+            </p>
+        </field>
+    </record>
+
+    <!-- Report: Equipment by Employee Location -->
+    <record id="action_report_equipment_by_location" model="ir.actions.act_window">
+        <field name="name">Опрема кај вработени</field>
+        <field name="res_model">stock.quant</field>
+        <field name="view_mode">list,pivot,graph</field>
+        <field name="domain">[
+            ('location_id.location_id.name', '=', 'Вработени'),
+            ('quantity', '>', 0)
+        ]</field>
+        <field name="context">{
+            'search_default_group_by_location': 1,
+        }</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Нема позајмена опрема
+            </p>
+            <p>
+                Тука ќе се прикажува опремата која е кај вработените.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu Items -->
+    <menuitem
+        id="menu_reverse_root"
+        name="Реверси"
+        parent="stock.menu_stock_warehouse_mgmt"
+        sequence="15"/>
+
+    <menuitem
+        id="menu_reverse_picking"
+        name="Реверси (Издавања)"
+        parent="menu_reverse_root"
+        action="action_picking_reverse"
+        sequence="10"/>
+
+    <menuitem
+        id="menu_reverse_return"
+        name="Враќања"
+        parent="menu_reverse_root"
+        action="action_picking_reverse_return"
+        sequence="20"/>
+
+    <menuitem
+        id="menu_equipment_by_employee"
+        name="Опрема кај вработени"
+        parent="menu_reverse_root"
+        action="action_report_equipment_by_location"
+        sequence="30"/>
+
+</odoo>

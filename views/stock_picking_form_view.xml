@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Extend stock.picking form view to add reverse-specific fields -->
+    <record id="view_picking_form_reverse" model="ir.ui.view">
+        <field name="name">stock.picking.form.reverse</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.view_picking_form"/>
+        <field name="arch" type="xml">
+            <!-- Add borrower type and return date after partner_id -->
+            <xpath expr="//field[@name='partner_id']" position="after">
+                <field name="is_reverse_picking" invisible="1"/>
+                <field name="borrower_type"
+                       invisible="not is_reverse_picking"/>
+                <field name="return_date"
+                       invisible="not is_reverse_picking"
+                       decoration-danger="is_overdue"
+                       decoration-warning="days_until_return &lt;= 3 and days_until_return &gt; 0"/>
+                <field name="days_until_return" invisible="1"/>
+                <field name="is_overdue" invisible="1"/>
+            </xpath>
+
+            <!-- Show overdue banner -->
+            <xpath expr="//div[@name='button_box']" position="before">
+                <div class="alert alert-danger" role="alert"
+                     invisible="not is_overdue or not is_reverse_picking or is_returned">
+                    <strong>ЗАДОЦНЕТО!</strong> Опремата требаше да биде вратена пред <field name="days_until_return" class="oe_inline"/> дена.
+                </div>
+                <div class="alert alert-success" role="alert"
+                     invisible="not is_returned or not is_reverse_picking">
+                    <strong>✓ ВРАТЕНО!</strong> Опремата е успешно вратена.
+                </div>
+                <field name="is_returned" invisible="1"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Tree view to show return date -->
+    <record id="view_picking_list_reverse" model="ir.ui.view">
+        <field name="name">stock.picking.list.reverse</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.vpicktree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='scheduled_date']" position="after">
+                <field name="return_date" optional="show"
+                       decoration-danger="is_overdue"
+                       decoration-warning="days_until_return &lt;= 3 and days_until_return &gt; 0"/>
+                <field name="is_returned" optional="show" widget="boolean_toggle"/>
+                <field name="is_overdue" column_invisible="True"/>
+                <field name="days_until_return" column_invisible="True"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Search view to filter overdue -->
+    <record id="view_picking_search_reverse" model="ir.ui.view">
+        <field name="name">stock.picking.search.reverse</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.view_picking_internal_search"/>
+        <field name="arch" type="xml">
+            <xpath expr="//filter[@name='internal']" position="after">
+                <separator/>
+                <filter string="Задоцнети" name="overdue"
+                        domain="[('return_date', '&lt;', context_today().strftime('%Y-%m-%d')), ('state', '=', 'done'), ('picking_type_id.name', '=', 'Реверс')]"/>
+                <filter string="За враќање оваа недела" name="returning_this_week"
+                        domain="[('return_date', '&gt;=', context_today().strftime('%Y-%m-%d')), ('return_date', '&lt;=', (context_today() + datetime.timedelta(days=7)).strftime('%Y-%m-%d')), ('picking_type_id.name', '=', 'Реверс')]"/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

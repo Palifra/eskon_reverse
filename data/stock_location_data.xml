@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+
+        <!-- ================================================================
+             PARENT LOCATION: Resources (Ресурси)
+             All resource locations (employees, vehicles, teams) go here
+             ================================================================ -->
+        <record id="stock_location_resources" model="stock.location">
+            <field name="name">Ресурси</field>
+            <field name="usage">view</field>
+            <field name="location_id" ref="stock.stock_location_locations"/>
+            <field name="comment">Главна локација за ресурси (вработени, возила, тимови)</field>
+        </record>
+
+        <!-- ================================================================
+             EMPLOYEES PARENT
+             ================================================================ -->
+        <record id="stock_location_employees" model="stock.location">
+            <field name="name">Вработени</field>
+            <field name="usage">view</field>
+            <field name="location_id" ref="stock_location_resources"/>
+            <field name="comment">Локации за следење на опрема кај вработени</field>
+        </record>
+
+        <!-- ================================================================
+             VEHICLES PARENT
+             ================================================================ -->
+        <record id="stock_location_vehicles" model="stock.location">
+            <field name="name">Возила</field>
+            <field name="usage">view</field>
+            <field name="location_id" ref="stock_location_resources"/>
+            <field name="comment">Локации за следење на материјали во возила</field>
+        </record>
+
+        <!-- ================================================================
+             TEAMS PARENT (for FSM integration)
+             ================================================================ -->
+        <record id="stock_location_teams" model="stock.location">
+            <field name="name">Тимови</field>
+            <field name="usage">view</field>
+            <field name="location_id" ref="stock_location_resources"/>
+            <field name="comment">Локации за FSM тимови</field>
+        </record>
+
+        <!-- ================================================================
+             PARTNERS PARENT (external borrowers)
+             ================================================================ -->
+        <record id="stock_location_partners" model="stock.location">
+            <field name="name">Партнери</field>
+            <field name="usage">view</field>
+            <field name="location_id" ref="stock.stock_location_locations"/>
+            <field name="comment">Локации за следење на опрема кај надворешни партнери/клиенти</field>
+        </record>
+
+        <!-- ================================================================
+             DEFAULT INTERNAL LOCATIONS (examples)
+             ================================================================ -->
+        <record id="stock_location_testing_lab" model="stock.location">
+            <field name="name">Тест лабораторија</field>
+            <field name="usage">internal</field>
+            <field name="location_id" ref="stock_location_employees"/>
+            <field name="comment">Општа локација за тестирање на опрема</field>
+        </record>
+
+        <record id="stock_location_service_team" model="stock.location">
+            <field name="name">Сервисен тим</field>
+            <field name="usage">internal</field>
+            <field name="location_id" ref="stock_location_employees"/>
+            <field name="comment">Опрема кај сервисен тим</field>
+        </record>
+
+    </data>
+</odoo>

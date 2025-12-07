@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+    Note: Picking Types are created via post_init_hook
+    because they require warehouse context.
+    See hooks.py -> _post_init_hook()
+    -->
+</odoo>
