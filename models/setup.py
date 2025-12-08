@@ -59,7 +59,7 @@ class ReverseSetup(models.AbstractModel):
 
             # Create return sequence
             return_sequence = Sequence.create({
-                'name': f'{warehouse.name} Секвенца Враќање Реверс',
+                'name': f'{warehouse.name} Секвенца Повратница',
                 'prefix': f'{warehouse.code}/REV-RET/',
                 'padding': 5,
                 'number_next': 1,
@@ -83,7 +83,7 @@ class ReverseSetup(models.AbstractModel):
 
             # Create return picking type
             return_picking_type = PickingType.create({
-                'name': 'Враќање на Реверс',
+                'name': 'Повратница',
                 'code': 'internal',
                 'sequence_code': 'REV-RET',
                 'sequence_id': return_sequence.id,
