@@ -248,7 +248,7 @@ class StockLocationProvider(models.AbstractModel):
 
         # Or team might have a vehicle with location
         if hasattr(job.team_id, 'vehicle_id') and job.team_id.vehicle_id:
-            if hasattr(job.team_id.vehicle_id, 'stock_location_id'):
+            if job.team_id.vehicle_id.stock_location_id:
                 return job.team_id.vehicle_id.stock_location_id
 
         return False
@@ -259,42 +259,37 @@ class StockLocationProvider(models.AbstractModel):
         # Check team vehicle first
         if hasattr(job, 'team_id') and job.team_id:
             if hasattr(job.team_id, 'vehicle_id') and job.team_id.vehicle_id:
-                if hasattr(job.team_id.vehicle_id, 'stock_location_id'):
+                if job.team_id.vehicle_id.stock_location_id:
                     return job.team_id.vehicle_id.stock_location_id
 
-        # Check employee vehicle
-        if hasattr(job, 'employee_id') and job.employee_id:
-            if hasattr(job.employee_id, 'vehicle_id') and job.employee_id.vehicle_id:
-                if hasattr(job.employee_id.vehicle_id, 'stock_location_id'):
-                    return job.employee_id.vehicle_id.stock_location_id
-
-        # Check employee_ids (multiple employees)
+        # Check employee_ids vehicles (Many2many - no employee_id on esfsm.job)
         if hasattr(job, 'employee_ids') and job.employee_ids:
             for employee in job.employee_ids:
                 if hasattr(employee, 'vehicle_id') and employee.vehicle_id:
-                    if hasattr(employee.vehicle_id, 'stock_location_id'):
+                    if employee.vehicle_id.stock_location_id:
                         return employee.vehicle_id.stock_location_id
+
+        # Check material_responsible_id vehicle
+        if hasattr(job, 'material_responsible_id') and job.material_responsible_id:
+            if hasattr(job.material_responsible_id, 'vehicle_id') and job.material_responsible_id.vehicle_id:
+                if job.material_responsible_id.vehicle_id.stock_location_id:
+                    return job.material_responsible_id.vehicle_id.stock_location_id
 
         return False
 
     @api.model
     def _get_employee_location(self, job):
         """Get location from assigned employee."""
-        # Single employee
-        if hasattr(job, 'employee_id') and job.employee_id:
-            if hasattr(job.employee_id, 'stock_location_id'):
-                return job.employee_id.stock_location_id
+        # Material responsible first (most specific - designated for materials)
+        if hasattr(job, 'material_responsible_id') and job.material_responsible_id:
+            if job.material_responsible_id.stock_location_id:
+                return job.material_responsible_id.stock_location_id
 
-        # Multiple employees - take first with location
+        # Multiple employees - take first with location (Many2many)
         if hasattr(job, 'employee_ids') and job.employee_ids:
             for employee in job.employee_ids:
-                if hasattr(employee, 'stock_location_id') and employee.stock_location_id:
+                if employee.stock_location_id:
                     return employee.stock_location_id
-
-        # Material responsible
-        if hasattr(job, 'material_responsible_id') and job.material_responsible_id:
-            if hasattr(job.material_responsible_id, 'stock_location_id'):
-                return job.material_responsible_id.stock_location_id
 
         return False
 

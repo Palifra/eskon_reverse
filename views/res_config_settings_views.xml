@@ -28,6 +28,14 @@
                             </div>
                         </div>
                     </setting>
+                    <setting id="reverse_wizard_defaults" string="Wizard - Стандардни вредности" help="Стандардни вредности при креирање реверс преку wizard">
+                        <div class="content-group">
+                            <div class="row mt16">
+                                <label for="reverse_default_return_days" class="col-lg-4 o_light_label"/>
+                                <field name="reverse_default_return_days"/>
+                            </div>
+                        </div>
+                    </setting>
                     <setting id="reverse_fsm_priority" string="FSM приоритет" help="Приоритет при избор на локација за теренски работи">
                         <div class="content-group">
                             <div class="row mt16">

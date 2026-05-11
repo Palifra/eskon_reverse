@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- FORM VIEW                                                          -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+    <record id="view_reverse_wizard_form" model="ir.ui.view">
+        <field name="name">eskon_reverse.wizard.form</field>
+        <field name="model">eskon_reverse.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Нов Реверс">
+                <header>
+                    <button name="action_confirm"
+                            string="Креирај Реверс"
+                            type="object"
+                            class="btn-primary"/>
+                    <button name="action_confirm_and_validate"
+                            string="Креирај и Потврди"
+                            type="object"
+                            class="btn-secondary"
+                            confirm="Ова ќе го потврди реверсот веднаш. Продолжи?"/>
+                </header>
+                <sheet>
+                    <!-- Alert: destination location (shown after recipient selected) -->
+                    <div class="alert alert-info text-center" role="alert"
+                         invisible="not dest_location_id">
+                        <strong>Дестинација:</strong>
+                        <field name="dest_location_name" class="fw-bold"/>
+                    </div>
+
+                    <group col="2">
+                        <!-- Left: Recipient -->
+                        <group string="Примател">
+                            <field name="borrower_type" widget="radio"/>
+                            <field name="employee_id"
+                                   invisible="borrower_type != 'employee'"
+                                   required="borrower_type == 'employee'"/>
+                            <field name="partner_id"
+                                   invisible="borrower_type != 'partner'"
+                                   required="borrower_type == 'partner'"/>
+                        </group>
+
+                        <!-- Right: Details -->
+                        <group string="Детали">
+                            <field name="return_date"/>
+                            <field name="origin" placeholder="SO001 / Проект X / ..."/>
+                        </group>
+                    </group>
+
+                    <!-- Hidden computed fields -->
+                    <field name="company_id" invisible="1"/>
+                    <field name="source_location_id" invisible="1"/>
+                    <field name="dest_location_id" invisible="1"/>
+                    <field name="recipient_selected" invisible="1"/>
+
+                    <!-- Product lines (visible after recipient selected) -->
+                    <notebook invisible="not recipient_selected">
+                        <page string="Производи" name="products">
+                            <field name="line_ids">
+                                <list editable="bottom">
+                                    <field name="product_id" width="300px"/>
+                                    <field name="lot_id"
+                                           optional="show"
+                                           invisible="product_tracking == 'none'"
+                                           required="product_tracking != 'none'"/>
+                                    <field name="product_uom_id" optional="hide" groups="uom.group_uom"/>
+                                    <field name="qty"/>
+                                    <field name="available_qty"
+                                           decoration-success="status == 'ok'"
+                                           decoration-warning="status == 'partial'"
+                                           decoration-danger="status == 'no_stock'"/>
+                                    <field name="status" column_invisible="1"/>
+                                    <field name="product_tracking" column_invisible="1"/>
+                                </list>
+                            </field>
+                            <div class="text-muted mt-2">
+                                <span class="text-success me-3">&#9679; Достапно</span>
+                                <span class="text-warning me-3">&#9679; Делумно достапно</span>
+                                <span class="text-danger">&#9679; Нема залиха</span>
+                            </div>
+                        </page>
+                        <page string="Белешка" name="note">
+                            <field name="note" placeholder="Дополнителни информации..."/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <footer>
+                    <button string="Откажи" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- ACTIONS                                                            -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- Popup action (for quick create from other views) -->
+    <record id="action_reverse_wizard" model="ir.actions.act_window">
+        <field name="name">Нов Реверс</field>
+        <field name="res_model">eskon_reverse.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <!-- Full-screen action (for menu navigation) -->
+    <record id="action_reverse_wizard_current" model="ir.actions.act_window">
+        <field name="name">Нов Реверс</field>
+        <field name="res_model">eskon_reverse.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">current</field>
+    </record>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- MENU ITEM                                                          -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+    <menuitem id="menu_reverse_wizard"
+              name="Нов Реверс"
+              parent="menu_reverse_root"
+              action="action_reverse_wizard_current"
+              sequence="5"/>
+
+</odoo>

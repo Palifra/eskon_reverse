@@ -1,1 +1,5 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_eskon_reverse_wizard_user,eskon_reverse.wizard.user,model_eskon_reverse_wizard,stock.group_stock_user,1,1,1,1
+access_eskon_reverse_wizard_manager,eskon_reverse.wizard.manager,model_eskon_reverse_wizard,stock.group_stock_manager,1,1,1,1
+access_eskon_reverse_wizard_line_user,eskon_reverse.wizard.line.user,model_eskon_reverse_wizard_line,stock.group_stock_user,1,1,1,1
+access_eskon_reverse_wizard_line_manager,eskon_reverse.wizard.line.manager,model_eskon_reverse_wizard_line,stock.group_stock_manager,1,1,1,1
