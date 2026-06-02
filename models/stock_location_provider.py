@@ -25,18 +25,25 @@ class StockLocationProvider(models.AbstractModel):
     # CONFIGURATION
     # ─────────────────────────────────────────────────────────────────────────
 
+    # ``location_field`` is the STABLE per-resource link used to dedup a
+    # location by record identity (never by display name). employee/vehicle
+    # already carry ``stock_location_id``; partner gets ``reverse_location_id``.
+    # A type without a ``location_field`` (team) keeps the legacy name-based
+    # dedup — it is dead config (no caller, location is related to the vehicle).
     RESOURCE_CONFIG = {
         'employee': {
             'param': 'eskon_reverse.auto_create_employee_location',
             'parent_ref': 'eskon_reverse.stock_location_employees',
             'name_prefix': 'Вработен',
             'name_field': 'name',
+            'location_field': 'stock_location_id',
         },
         'vehicle': {
             'param': 'eskon_reverse.auto_create_vehicle_location',
             'parent_ref': 'eskon_reverse.stock_location_vehicles',
             'name_prefix': 'Возило',
             'name_field': 'license_plate',  # fallback to name
+            'location_field': 'stock_location_id',
         },
         'team': {
             'param': 'eskon_reverse.auto_create_team_location',
@@ -49,6 +56,7 @@ class StockLocationProvider(models.AbstractModel):
             'parent_ref': 'eskon_reverse.stock_location_partners',
             'name_prefix': '',  # No prefix for partners
             'name_field': 'name',
+            'location_field': 'reverse_location_id',
         },
     }
 
@@ -75,6 +83,18 @@ class StockLocationProvider(models.AbstractModel):
             _logger.warning(f"Unknown resource type: {resource_type}")
             return False
 
+        config = self.RESOURCE_CONFIG[resource_type]
+        location_field = config.get('location_field')
+
+        # STABLE IDENTITY (H4): if the resource already has a linked location,
+        # that IS its location — return it. Dedup is by record id, never by
+        # display name, so two same-named resources never share one location
+        # and a rename can never merge two equipment ledgers (also fixes M10).
+        if location_field and location_field in resource_record._fields:
+            existing_link = resource_record[location_field]
+            if existing_link:
+                return existing_link
+
         # Check if auto-create is enabled
         if not self._is_auto_create_enabled(resource_type):
             _logger.debug(f"Auto-create disabled for {resource_type}")
@@ -86,33 +106,31 @@ class StockLocationProvider(models.AbstractModel):
             _logger.warning(f"Parent location not found for {resource_type}")
             return False
 
-        # Generate location name
+        # Generate location name (display label only — NOT an identity key)
         location_name = self._generate_location_name(resource_type, resource_record)
         if not location_name:
             _logger.warning(f"Could not generate location name for {resource_type}")
             return False
 
-        # Search for existing location
         Location = self.env['stock.location']
-        existing = Location.search([
-            ('name', '=', location_name),
-            ('location_id', '=', parent_location.id),
-        ], limit=1)
 
-        if existing:
-            return existing
+        # Legacy fallback for a type with NO stable link field (team): keep the
+        # old name-based dedup so its behaviour is unchanged.
+        if not location_field:
+            existing = Location.search([
+                ('name', '=', location_name),
+                ('location_id', '=', parent_location.id),
+            ], limit=1)
+            if existing:
+                return existing
 
-        # Create new location.
+        # Create a FRESH location (no name search → no collision).
         # sudo(): creating an internal stock.location is a framework-internal
         # side effect of issuing a реверс — a normal FSM/stock user who triggers
-        # it must not need stock-admin rights (M12). The create must NOT be left
-        # to silently swallow an AccessError into "no location" (M13).
-        # company_id: inherit the PARENT's company, not the resource's. The
-        # resource (esp. res.partner) often has company_id=False, while the
-        # parent hierarchy ('Партнери'/'Ресурси'/…) is created per-company by
-        # setup — so a False/other company on the child made it company-
-        # INCOMPATIBLE with its parent, the create raised, and the error was
-        # swallowed → empty dest_location (the test_09/test_16 failures).
+        # it must not need stock-admin rights (M12/M13).
+        # company_id: inherit the PARENT's company, not the resource's (a
+        # res.partner often has company_id=False, while the parent hierarchy is
+        # per-company → a mismatched child failed _check_company).
         try:
             location = Location.sudo().create({
                 'name': location_name,
@@ -120,11 +138,21 @@ class StockLocationProvider(models.AbstractModel):
                 'location_id': parent_location.id,
                 'company_id': parent_location.company_id.id,
             })
-            _logger.info(f"Created location '{location_name}' for {resource_type}")
-            return location
         except Exception as e:
             _logger.error(f"Failed to create location for {resource_type}: {e}")
             return False
+
+        # Write the link back so the location is owned by exactly one resource
+        # and future lookups dedup by id. Skip related/computed link fields.
+        if location_field and location_field in resource_record._fields \
+                and not resource_record._fields[location_field].related:
+            try:
+                resource_record.sudo().write({location_field: location.id})
+            except Exception as e:
+                _logger.error(f"Failed to link location to {resource_type}: {e}")
+
+        _logger.info(f"Created location '{location_name}' for {resource_type}")
+        return location
 
     @api.model
     def get_fsm_location(self, job):

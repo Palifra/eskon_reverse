@@ -174,3 +174,118 @@ class ReverseSetup(models.AbstractModel):
             _logger.info("Synced stock locations for %d employees", synced)
 
         return True
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # H4 — resource→location identity migration
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Partial-unique indexes keep one location per resource — the "teeth" that
+    # stop a collision recurring. Created only AFTER existing collisions are
+    # resolved, so creation cannot fail on a pre-existing duplicate.
+    _LINK_INDEXES = [
+        ('hr_employee', 'stock_location_id', 'eskon_reverse_uniq_emp_location'),
+        ('fleet_vehicle', 'stock_location_id', 'eskon_reverse_uniq_veh_location'),
+        ('res_partner', 'reverse_location_id', 'eskon_reverse_uniq_partner_location'),
+    ]
+
+    @api.model
+    def _migrate_resource_location_identity(self):
+        """One-time, idempotent H4 migration. Safe to re-run.
+
+        1. Split any internal location shared by >1 resource onto fresh
+           locations (keep the first holder; re-home the rest). A shared
+           location that still holds stock is left for manual handling (logged).
+        2. Backfill ``res.partner.reverse_location_id`` from the existing
+           Партнери children by 1:1 name match.
+        3. Create partial-unique indexes on the link columns so the collision
+           cannot recur at the DB level.
+        """
+        # Flush first so the raw-SQL collision scan below sees any pending ORM
+        # writes (e.g. a caller that just re-pointed a resource) — not stale
+        # committed rows. Without this the scan can miss an unflushed collision.
+        self.env.flush_all()
+        self._split_shared_resource_locations()
+        self._backfill_partner_location_links()
+        self._create_link_unique_indexes()
+        return True
+
+    @api.model
+    def _split_shared_resource_locations(self):
+        provider = self.env['stock.location.provider']
+        Quant = self.env['stock.quant']
+        for model, field, rtype in (
+            ('hr.employee', 'stock_location_id', 'employee'),
+            ('fleet.vehicle', 'stock_location_id', 'vehicle'),
+        ):
+            Model = self.env[model].with_context(active_test=False)
+            self.env.cr.execute(
+                "SELECT %s FROM %s WHERE %s IS NOT NULL "
+                "GROUP BY %s HAVING count(*) > 1" % (
+                    field, Model._table, field, field))
+            shared_loc_ids = [row[0] for row in self.env.cr.fetchall()]
+            for loc_id in shared_loc_ids:
+                # Keep the lowest-id holder; re-home the rest. active_test=False
+                # so an archived holder is re-homed too (else it lingers on the
+                # shared location and blocks the unique index).
+                holders = Model.search([(field, '=', loc_id)], order='id')
+                if Quant.search_count([('location_id', '=', loc_id),
+                                       ('quantity', '!=', 0)]):
+                    _logger.warning(
+                        "H4 migration: location id %s shared by %d %s and NON-EMPTY "
+                        "— leaving for manual split", loc_id, len(holders), model)
+                    continue
+                for extra in holders[1:]:
+                    extra.sudo().write({field: False})
+                    new_loc = provider.get_or_create_location(rtype, extra)
+                    _logger.info(
+                        "H4 migration: re-homed %s off shared location %s → %s",
+                        extra.display_name, loc_id,
+                        new_loc.display_name if new_loc else '∅')
+
+    @api.model
+    def _backfill_partner_location_links(self):
+        partners_parent = self.env.ref(
+            'eskon_reverse.stock_location_partners', raise_if_not_found=False)
+        if not partners_parent:
+            return
+        Partner = self.env['res.partner']
+        for loc in self.env['stock.location'].search(
+                [('location_id', '=', partners_parent.id)]):
+            partners = Partner.search([('name', '=', loc.name)])
+            if len(partners) == 1 and not partners.reverse_location_id:
+                partners.sudo().write({'reverse_location_id': loc.id})
+                _logger.info("H4 migration: linked partner '%s' → location %s",
+                             partners.name, loc.id)
+            elif len(partners) > 1:
+                _logger.warning(
+                    "H4 migration: %d partners named '%s' — skipping link (ambiguous)",
+                    len(partners), loc.name)
+
+    @api.model
+    def _create_link_unique_indexes(self):
+        # Flush pending ORM writes (the re-home + partner backfill) so the raw
+        # index DDL below sees the post-split table state, not stale pre-write
+        # rows still buffered in the ORM (the cache-vs-raw-SQL flush trap).
+        self.env.flush_all()
+        for table, field, name in self._LINK_INDEXES:
+            self.env.cr.execute(
+                "SELECT 1 FROM pg_indexes WHERE indexname = %s", (name,))
+            if self.env.cr.fetchone():
+                continue
+            # Defensive: never abort the whole upgrade if a duplicate survives
+            # (e.g. a shared location that still holds stock, left for manual
+            # split). Skip+warn so the rest of the migration/upgrade proceeds.
+            self.env.cr.execute(
+                "SELECT %s FROM %s WHERE %s IS NOT NULL "
+                "GROUP BY %s HAVING count(*) > 1 LIMIT 1" % (
+                    field, table, field, field))
+            if self.env.cr.fetchone():
+                _logger.warning(
+                    "H4 migration: %s still has a duplicate location link — "
+                    "skipping unique index %s. Resolve the shared location "
+                    "manually, then re-run the migration.", table, name)
+                continue
+            self.env.cr.execute(
+                "CREATE UNIQUE INDEX %s ON %s (%s) WHERE %s IS NOT NULL" % (
+                    name, table, field, field))
+            _logger.info("H4 migration: created unique index %s", name)

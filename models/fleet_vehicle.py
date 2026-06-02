@@ -18,6 +18,9 @@ class FleetVehicle(models.Model):
         'stock.location',
         string='Локација на залихи',
         readonly=True,
+        copy=False,  # one location per vehicle — a copy must NOT inherit the
+                     # link (the partial-unique index would reject it); the
+                     # create-override re-creates a fresh one for the copy.
         help='Автоматски креирана интерна локација за следење на материјали во возилото'
     )
 
