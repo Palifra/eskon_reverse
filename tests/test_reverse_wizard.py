@@ -41,10 +41,11 @@ class TestReverseWizard(TransactionCase):
                 'default_location_dest_id': cls.stock_location.id,
             })
 
-        # Create test product (consumable)
+        # Create test product (storable goods — реверс requires is_storable)
         cls.product = cls.env['product.product'].create({
             'name': 'Тест Бормашина',
             'type': 'consu',
+            'is_storable': True,
             'tracking': 'none',
         })
 
@@ -52,6 +53,7 @@ class TestReverseWizard(TransactionCase):
         cls.product_tracked = cls.env['product.product'].create({
             'name': 'Тест Мултиметар',
             'type': 'consu',
+            'is_storable': True,
             'tracking': 'lot',
         })
 
@@ -348,3 +350,53 @@ class TestReverseWizard(TransactionCase):
         })
         # With no stock, status should be no_stock or partial
         self.assertIn(line.status, ('no_stock', 'partial'))
+
+    # ─────────────────────────────────────────────────────────────────────
+    # H1 — реверс requires STORABLE products (else no quant -> empty tracking)
+    # ─────────────────────────────────────────────────────────────────────
+
+    def _employee_wizard(self, product, qty=1.0):
+        return self.env['eskon_reverse.wizard'].create({
+            'borrower_type': 'employee',
+            'employee_id': self.employee.id,
+            'return_date': fields.Date.today() + timedelta(days=7),
+            'line_ids': [(0, 0, {
+                'product_id': product.id,
+                'qty': qty,
+                'product_uom_id': product.uom_id.id,
+            })],
+        })
+
+    def test_30_non_storable_product_rejected(self):
+        """A non-storable 'consu' product creates NO quant on validation, so the
+        реверс would silently track nothing. _validate_wizard must reject it."""
+        non_storable = self.env['product.product'].create({
+            'name': 'Тест Нескладиштива', 'type': 'consu', 'is_storable': False,
+        })
+        wizard = self._employee_wizard(non_storable)
+        with self.assertRaises(ValidationError):
+            wizard.action_confirm()
+
+    def test_31_storable_reverse_creates_destination_quant(self):
+        """Positive postcondition: issuing a STORABLE product via реверс leaves a
+        quant at the borrower's location — what the stat button / 'Опрема кај
+        вработени' report actually read."""
+        storable = self.env['product.product'].create({
+            'name': 'Тест Складиштива Бормашина', 'type': 'consu', 'is_storable': True,
+        })
+        self.env['stock.quant']._update_available_quantity(
+            storable, self.stock_location, 5.0)
+        wizard = self._employee_wizard(storable, qty=2.0)
+        dest = wizard.dest_location_id
+        self.assertTrue(dest, "Borrower (employee) location must resolve")
+
+        wizard.action_confirm_and_validate()
+
+        quant = self.env['stock.quant'].search([
+            ('product_id', '=', storable.id),
+            ('location_id', '=', dest.id),
+            ('quantity', '>', 0),
+        ])
+        self.assertTrue(
+            quant, "A storable реверс must leave a quant at the borrower's location")
+        self.assertEqual(sum(quant.mapped('quantity')), 2.0)

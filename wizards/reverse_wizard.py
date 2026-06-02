@@ -173,13 +173,19 @@ class ReverseWizard(models.TransientModel):
         picking.action_confirm()
         picking.action_assign()
 
-        # Set quantities done on move lines
+        # Set done quantities on the move lines. In Odoo 18 the move line's
+        # reserved/picked quantity is `quantity` (the old `reserved_uom_qty`
+        # field no longer exists — using it raised AttributeError, which is why
+        # this manual "confirm and validate" path was broken). After
+        # action_assign, `ml.quantity` already holds the reserved amount; fall
+        # back to the demand when nothing could be reserved.
         for move in picking.move_ids:
             if move.move_line_ids:
                 for ml in move.move_line_ids:
-                    ml.quantity = ml.reserved_uom_qty or move.product_uom_qty
+                    ml.quantity = ml.quantity or move.product_uom_qty
             else:
                 move.quantity = move.product_uom_qty
+            move.picked = True
 
         picking.button_validate()
 
@@ -213,6 +219,17 @@ class ReverseWizard(models.TransientModel):
                 raise ValidationError(
                     _('Производот "%s" бара лот/сериски број.') % line.product_id.name
                 )
+            # Реверс tracks borrowed equipment via stock quants per location.
+            # A non-storable product creates NO quant on validation, so it would
+            # silently track nothing (empty stat button / "Опрема кај вработени"
+            # report). Reject it here — the field domain is only a UI hint and
+            # can be bypassed (API/import/onchange).
+            if not line.product_id.is_storable:
+                raise ValidationError(_(
+                    'Производот "%s" не е складиштив (нема „Следи залиха"). '
+                    'Преку реверс може да се издаваат само складиштиви производи, '
+                    'бидејќи следењето се води преку залиха по локација.'
+                ) % line.product_id.name)
 
     def _create_picking(self):
         """Create stock.picking with move lines from wizard data."""
@@ -313,7 +330,7 @@ class ReverseWizardLine(models.TransientModel):
         'product.product',
         string='Производ',
         required=True,
-        domain="[('type', '=', 'consu')]",
+        domain="[('type', '=', 'consu'), ('is_storable', '=', True)]",
     )
 
     qty = fields.Float(
