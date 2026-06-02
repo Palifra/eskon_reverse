@@ -102,13 +102,23 @@ class StockLocationProvider(models.AbstractModel):
         if existing:
             return existing
 
-        # Create new location
+        # Create new location.
+        # sudo(): creating an internal stock.location is a framework-internal
+        # side effect of issuing a реверс — a normal FSM/stock user who triggers
+        # it must not need stock-admin rights (M12). The create must NOT be left
+        # to silently swallow an AccessError into "no location" (M13).
+        # company_id: inherit the PARENT's company, not the resource's. The
+        # resource (esp. res.partner) often has company_id=False, while the
+        # parent hierarchy ('Партнери'/'Ресурси'/…) is created per-company by
+        # setup — so a False/other company on the child made it company-
+        # INCOMPATIBLE with its parent, the create raised, and the error was
+        # swallowed → empty dest_location (the test_09/test_16 failures).
         try:
-            location = Location.create({
+            location = Location.sudo().create({
                 'name': location_name,
                 'usage': 'internal',
                 'location_id': parent_location.id,
-                'company_id': resource_record.company_id.id if hasattr(resource_record, 'company_id') and resource_record.company_id else False,
+                'company_id': parent_location.company_id.id,
             })
             _logger.info(f"Created location '{location_name}' for {resource_type}")
             return location

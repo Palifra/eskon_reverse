@@ -152,6 +152,37 @@ class TestReverseWizard(TransactionCase):
         })
         self.assertTrue(wizard.dest_location_id)
 
+    def test_09b_partner_location_created_for_non_admin(self):
+        """M12 guard: a normal stock USER (not a stock manager) issuing a реверс
+        must still get the partner location auto-created. stock.group_stock_user
+        has create=False on stock.location, so the auto-create only works because
+        the provider does it with sudo() — a framework-internal side effect, not
+        gated behind stock-admin rights. Without the sudo this user hits
+        AccessError, it's swallowed, and dest_location_id ends up empty."""
+        self.env['ir.config_parameter'].sudo().set_param(
+            'eskon_reverse.auto_create_partner_location', 'True'
+        )
+        stock_user = self.env['res.users'].create({
+            'name': 'ZZ Реверс Stock User',
+            'login': 'zz_rev_stock_user',
+            'groups_id': [(6, 0, [
+                self.env.ref('base.group_user').id,
+                self.env.ref('stock.group_stock_user').id,
+            ])],
+        })
+        self.assertFalse(
+            stock_user.has_group('stock.group_stock_manager'),
+            "Test user must NOT be a stock manager (else the sudo guard is vacuous)")
+
+        wizard = self.env['eskon_reverse.wizard'].with_user(stock_user).create({
+            'borrower_type': 'partner',
+            'partner_id': self.partner.id,
+        })
+        self.assertTrue(
+            wizard.dest_location_id,
+            "A non-admin stock user must get the partner location auto-created "
+            "(the provider's stock.location create must be sudo'd)")
+
     # ─────────────────────────────────────────────────────────────────────
     # VALIDATION
     # ─────────────────────────────────────────────────────────────────────
