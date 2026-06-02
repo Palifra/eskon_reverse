@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Реверс - Позајмување на опрема',
-    'version': '18.0.2.2.0',
+    'version': '18.0.2.3.0',
     'category': 'Inventory/Inventory',
     'summary': 'Управување со привремено издавање на опрема (Реверс) со Location Provider',
     'description': """
@@ -57,6 +57,7 @@ Website: https://www.eskon.com.mk
         'data/stock_picking_type_data.xml',
         'data/ir_cron_data.xml',
         'wizards/reverse_wizard_views.xml',
+        'reports/reverse_report.xml',
         'views/stock_picking_views.xml',
         'views/stock_picking_form_view.xml',
         'views/res_config_settings_views.xml',

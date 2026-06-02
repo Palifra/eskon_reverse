@@ -65,6 +65,37 @@ class StockPicking(models.Model):
         store=False,
     )
 
+    # ── M2: signed legal handover document (Издал / Примил) ──────────────────
+    issuer_id = fields.Many2one(
+        'res.users',
+        string='Издал',
+        default=lambda self: self.env.user,
+        copy=False,
+        help='Одговорно лице кое ја издало опремата (реверс).',
+    )
+    issuer_signature = fields.Binary(
+        string='Потпис (Издал)', copy=False, attachment=True)
+    issuer_signature_date = fields.Datetime(
+        string='Датум на потпис (Издал)', readonly=True, copy=False)
+    borrower_signature = fields.Binary(
+        string='Потпис (Примил)', copy=False, attachment=True)
+    borrower_signature_date = fields.Datetime(
+        string='Датум на потпис (Примил)', readonly=True, copy=False)
+
+    def write(self, vals):
+        # Auto-stamp the capture date when a signature is set, and clear it when
+        # the signature is removed — so the date always reflects the signature.
+        # Runs for ALL pickings, but the signature keys are реверс-only, so for
+        # every other write both `in` checks are False and this is a pass-through.
+        # (A multi-record write of one signature stamps the same instant on all —
+        # the intended "batch captured at one time" semantics.)
+        now = fields.Datetime.now()
+        if 'issuer_signature' in vals and 'issuer_signature_date' not in vals:
+            vals['issuer_signature_date'] = now if vals.get('issuer_signature') else False
+        if 'borrower_signature' in vals and 'borrower_signature_date' not in vals:
+            vals['borrower_signature_date'] = now if vals.get('borrower_signature') else False
+        return super().write(vals)
+
     @api.depends('picking_type_id', 'picking_type_id.sequence_code')
     def _compute_is_reverse_picking(self):
         for picking in self:

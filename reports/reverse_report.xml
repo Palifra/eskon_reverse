@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="action_report_reverse" model="ir.actions.report">
+        <field name="name">Реверс</field>
+        <field name="model">stock.picking</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">eskon_reverse.report_reverse_document</field>
+        <field name="report_file">eskon_reverse.report_reverse_document</field>
+        <field name="print_report_name">'Реверс - %s' % (object.name)</field>
+    </record>
+
+    <template id="report_reverse_document">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-call="web.external_layout">
+                    <div class="page">
+                        <h2 class="text-center">РЕВЕРС</h2>
+                        <h4 class="text-center text-muted" t-out="o.name"/>
+
+                        <div class="row mt-4">
+                            <div class="col-6">
+                                <strong>Примател:</strong>
+                                <div t-field="o.partner_id"
+                                     t-options='{"widget": "contact", "fields": ["name", "address", "phone"], "no_marker": true}'/>
+                            </div>
+                            <div class="col-6 text-end">
+                                <p class="mb-1"><strong>Датум на издавање:</strong>
+                                   <span t-field="o.date_done"/></p>
+                                <p class="mb-1"><strong>Рок за враќање:</strong>
+                                   <span t-field="o.return_date"/></p>
+                            </div>
+                        </div>
+
+                        <table class="table table-sm mt-3">
+                            <thead>
+                                <tr>
+                                    <th>Опрема / Материјал</th>
+                                    <th class="text-end">Количина</th>
+                                    <th>Ед. мерка</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr t-foreach="o.move_ids" t-as="m">
+                                    <td t-out="m.product_id.display_name"/>
+                                    <td class="text-end"><span t-field="m.product_uom_qty"/></td>
+                                    <td t-out="m.product_uom.name"/>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <div class="mt-2" t-if="o.note">
+                            <strong>Забелешка:</strong>
+                            <div t-field="o.note"/>
+                        </div>
+
+                        <p class="mt-4" style="font-style: italic;">
+                            Со потпишување на овој реверс, примателот потврдува дека ја
+                            примил горенаведената опрема и се обврзува да ја врати во
+                            исправна состојба најдоцна до наведениот рок за враќање.
+                        </p>
+
+                        <div class="row mt-5">
+                            <div class="col-6 text-center">
+                                <strong>ИЗДАЛ (одговорно лице)</strong>
+                                <div t-out="o.issuer_id.name or ''"/>
+                                <img t-if="o.issuer_signature"
+                                     t-att-src="image_data_uri(o.issuer_signature)"
+                                     style="max-height: 80px;" alt="Потпис"/>
+                                <div t-else="" style="border-bottom: 1px solid #000; height: 60px;"/>
+                                <div t-if="o.issuer_signature_date" class="text-muted">
+                                    Датум: <span t-field="o.issuer_signature_date"/>
+                                </div>
+                            </div>
+                            <div class="col-6 text-center">
+                                <strong>ПРИМИЛ (примател)</strong>
+                                <div t-out="o.partner_id.name or ''"/>
+                                <img t-if="o.borrower_signature"
+                                     t-att-src="image_data_uri(o.borrower_signature)"
+                                     style="max-height: 80px;" alt="Потпис"/>
+                                <div t-else="" style="border-bottom: 1px solid #000; height: 60px;"/>
+                                <div t-if="o.borrower_signature_date" class="text-muted">
+                                    Датум: <span t-field="o.borrower_signature_date"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </t>
+            </t>
+        </t>
+    </template>
+
+</odoo>

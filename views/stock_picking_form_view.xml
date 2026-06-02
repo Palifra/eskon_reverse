@@ -36,6 +36,35 @@
                 </div>
                 <field name="is_returned" invisible="1"/>
             </xpath>
+
+            <!-- M2: print the signed реверс document -->
+            <xpath expr="//header" position="inside">
+                <button name="%(eskon_reverse.action_report_reverse)d"
+                        type="action" string="Печати Реверс"
+                        class="btn-secondary"
+                        invisible="not is_reverse_picking"/>
+            </xpath>
+
+            <!-- M2: issuer + dual acceptance signatures (Издал / Примил) -->
+            <xpath expr="//notebook" position="inside">
+                <page name="reverse_signatures" string="Реверс - Потписи"
+                      invisible="not is_reverse_picking">
+                    <group>
+                        <group string="Издал (одговорно лице)">
+                            <field name="issuer_id"/>
+                            <field name="issuer_signature" widget="signature"
+                                   options="{'size': [300, 120]}"/>
+                            <field name="issuer_signature_date" readonly="1"/>
+                        </group>
+                        <group string="Примил (примател)">
+                            <field name="partner_id" readonly="1"/>
+                            <field name="borrower_signature" widget="signature"
+                                   options="{'size': [300, 120]}"/>
+                            <field name="borrower_signature_date" readonly="1"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
         </field>
     </record>
 
