@@ -16,6 +16,10 @@
                        invisible="not is_reverse_picking"
                        decoration-danger="is_overdue"
                        decoration-warning="days_until_return &lt;= 3 and days_until_return &gt; 0"/>
+                <field name="outstanding_qty"
+                       string="Невратена количина"
+                       invisible="not is_reverse_picking or state != 'done'"
+                       readonly="1"/>
                 <field name="days_until_return" invisible="1"/>
                 <field name="is_overdue" invisible="1"/>
             </xpath>
