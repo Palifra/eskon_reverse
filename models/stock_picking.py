@@ -144,42 +144,23 @@ class StockPicking(models.Model):
 
     @api.onchange('borrower_type', 'partner_id')
     def _onchange_borrower_partner(self):
+        """Resolve the partner's destination location through the central
+        Location Provider when a partner is selected on a Реверс picking.
+
+        Routing through ``stock.location.provider`` — instead of a hand-rolled
+        ``Location.create`` here — gives one consistent path shared with the
+        issue wizard and esfsm_stock:
+          * the create is ``sudo``'d, so a normal ``stock.group_stock_user``
+            editing the picking does not hit AccessError on stock.location
+            create (was M12);
+          * the ``auto_create_partner_location`` setting is honoured, so a
+            disabled gate no longer litters the Партнери hierarchy (was L2);
+          * the location inherits the parent's company (was L3/L6) and dedups
+            exactly as the wizard does (was M7).
         """
-        When partner is selected, automatically create/select partner location.
-        """
-        if self.borrower_type == 'partner' and self.partner_id:
-            # Find or create partner location
-            partner_location = self._get_or_create_partner_location(self.partner_id)
-            if partner_location and self.picking_type_id.sequence_code == REVERSE_CODE:
+        if (self.borrower_type == 'partner' and self.partner_id
+                and self.picking_type_id.sequence_code == REVERSE_CODE):
+            partner_location = self.env['stock.location.provider'].get_or_create_location(
+                'partner', self.partner_id)
+            if partner_location:
                 self.location_dest_id = partner_location
-
-    def _get_or_create_partner_location(self, partner):
-        """
-        Get or create a location for the partner under 'Партнери' parent location.
-        """
-        Location = self.env['stock.location']
-
-        # Find Partners parent location
-        partners_location = self.env.ref(
-            'eskon_reverse.stock_location_partners',
-            raise_if_not_found=False
-        )
-
-        if not partners_location:
-            return False
-
-        # Search for existing partner location
-        partner_loc = Location.search([
-            ('name', '=', partner.name),
-            ('location_id', '=', partners_location.id),
-        ], limit=1)
-
-        if not partner_loc:
-            # Create new location for this partner
-            partner_loc = Location.create({
-                'name': partner.name,
-                'usage': 'internal',
-                'location_id': partners_location.id,
-            })
-
-        return partner_loc

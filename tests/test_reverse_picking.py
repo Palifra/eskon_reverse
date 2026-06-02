@@ -141,46 +141,125 @@ class TestReversePicking(TransactionCase):
         copied_picking = picking.copy()
         self.assertFalse(copied_picking.reminder_sent)
 
-    def test_09_partner_location_creation(self):
-        """Test automatic creation of partner location"""
+    def test_09_partner_onchange_routes_through_provider(self):
+        """The partner onchange must resolve location_dest_id through the central
+        Location Provider (sudo'd, company-scoped, gated) — not a hand-rolled
+        Location.create. The dest lands under the Партнери parent and inherits
+        the parent's company (L3/L6 — the old onchange path set no company_id)."""
         if not self.partners_location:
             self.skipTest("Partners location not found")
+        self.env['ir.config_parameter'].sudo().set_param(
+            'eskon_reverse.auto_create_partner_location', 'True')
 
-        new_partner = self.env['res.partner'].create({
-            'name': 'New Test Partner',
+        new_partner = self.env['res.partner'].create({'name': 'Onchange Partner'})
+        picking = self.env['stock.picking'].create({
+            'picking_type_id': self.picking_type.id,
+            'location_id': self.stock_location.id,
+            'location_dest_id': self.stock_location.id,
+            'borrower_type': 'partner',
+            'partner_id': new_partner.id,
         })
+        picking._onchange_borrower_partner()
+
+        loc = picking.location_dest_id
+        self.assertTrue(loc, "onchange must set a partner destination location")
+        self.assertEqual(loc.name, 'Onchange Partner')
+        self.assertEqual(loc.location_id, self.partners_location)
+        self.assertEqual(loc.usage, 'internal')
+        self.assertEqual(
+            loc.company_id, self.partners_location.company_id,
+            "provider must stamp company from the parent location (L3/L6)")
+
+    def test_09b_partner_onchange_respects_disabled_gate(self):
+        """L2: with auto_create_partner_location disabled, the onchange must NOT
+        create a partner location (the old hand-rolled path ignored the gate and
+        always created, littering the Партнери hierarchy)."""
+        if not self.partners_location:
+            self.skipTest("Partners location not found")
+        self.env['ir.config_parameter'].sudo().set_param(
+            'eskon_reverse.auto_create_partner_location', 'False')
+
+        gated_partner = self.env['res.partner'].create({'name': 'Gated Partner'})
+        domain = [
+            ('name', '=', 'Gated Partner'),
+            ('location_id', '=', self.partners_location.id),
+        ]
+        before = self.env['stock.location'].search_count(domain)
+        picking = self.env['stock.picking'].create({
+            'picking_type_id': self.picking_type.id,
+            'location_id': self.stock_location.id,
+            'location_dest_id': self.stock_location.id,
+            'borrower_type': 'partner',
+            'partner_id': gated_partner.id,
+        })
+        picking._onchange_borrower_partner()
+
+        after = self.env['stock.location'].search_count(domain)
+        self.assertEqual(
+            before, after,
+            "a disabled gate must prevent partner-location creation in the onchange")
+
+    def test_09c_partner_onchange_works_for_non_admin(self):
+        """M12: the partner onchange routes through the sudo'd provider, so a
+        normal stock USER (create=False on stock.location) editing a Реверс
+        picking no longer crashes with AccessError on location create. The old
+        hand-rolled Location.create (no sudo, no try/except) raised for any
+        non-manager — see the analytic-account/viber sudo lessons."""
+        if not self.partners_location:
+            self.skipTest("Partners location not found")
+        self.env['ir.config_parameter'].sudo().set_param(
+            'eskon_reverse.auto_create_partner_location', 'True')
+
+        stock_user = self.env['res.users'].create({
+            'name': 'ZZ Реверс Picking Stock User',
+            'login': 'zz_rev_pick_stock_user',
+            'groups_id': [(6, 0, [
+                self.env.ref('base.group_user').id,
+                self.env.ref('stock.group_stock_user').id,
+            ])],
+        })
+        self.assertFalse(
+            stock_user.has_group('stock.group_stock_manager'),
+            "Test user must NOT be a stock manager (else the sudo guard is vacuous)")
+
+        nonadmin_partner = self.env['res.partner'].create({'name': 'NonAdmin Onchange Partner'})
+        picking = self.env['stock.picking'].create({
+            'picking_type_id': self.picking_type.id,
+            'location_id': self.stock_location.id,
+            'location_dest_id': self.stock_location.id,
+            'borrower_type': 'partner',
+            'partner_id': nonadmin_partner.id,
+        })
+        picking_as_user = picking.with_user(stock_user)
+        # OLD code raises AccessError inside the onchange here; NEW code sudo's
+        # the location create through the provider.
+        picking_as_user._onchange_borrower_partner()
+        self.assertTrue(
+            picking_as_user.location_dest_id,
+            "a non-admin stock user must get the partner dest via the sudo'd provider")
+
+    def test_10_partner_onchange_reuses_existing_location(self):
+        """Idempotency: calling the onchange twice for the same partner reuses
+        the same location (the provider dedups), never a duplicate."""
+        if not self.partners_location:
+            self.skipTest("Partners location not found")
+        self.env['ir.config_parameter'].sudo().set_param(
+            'eskon_reverse.auto_create_partner_location', 'True')
 
         picking = self.env['stock.picking'].create({
             'picking_type_id': self.picking_type.id,
             'location_id': self.stock_location.id,
             'location_dest_id': self.stock_location.id,
+            'borrower_type': 'partner',
+            'partner_id': self.partner.id,
         })
+        picking._onchange_borrower_partner()
+        loc1 = picking.location_dest_id
+        picking._onchange_borrower_partner()
+        loc2 = picking.location_dest_id
 
-        partner_loc = picking._get_or_create_partner_location(new_partner)
-
-        self.assertTrue(partner_loc)
-        self.assertEqual(partner_loc.name, 'New Test Partner')
-        self.assertEqual(partner_loc.location_id, self.partners_location)
-        self.assertEqual(partner_loc.usage, 'internal')
-
-    def test_10_partner_location_reuse(self):
-        """Test that existing partner location is reused"""
-        if not self.partners_location:
-            self.skipTest("Partners location not found")
-
-        picking = self.env['stock.picking'].create({
-            'picking_type_id': self.picking_type.id,
-            'location_id': self.stock_location.id,
-            'location_dest_id': self.stock_location.id,
-        })
-
-        # Create first time
-        loc1 = picking._get_or_create_partner_location(self.partner)
-        # Call again - should return same location
-        loc2 = picking._get_or_create_partner_location(self.partner)
-
+        self.assertTrue(loc1)
         self.assertEqual(loc1, loc2)
-        self.assertEqual(loc1.id, loc2.id)
 
     def test_11_cron_sends_reminders(self):
         """Test cron job creates activities for upcoming returns"""
