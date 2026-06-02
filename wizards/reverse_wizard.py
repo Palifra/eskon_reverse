@@ -235,17 +235,18 @@ class ReverseWizard(models.TransientModel):
         """Create stock.picking with move lines from wizard data."""
         self.ensure_one()
 
-        # Find the Реверс picking type
-        picking_type = self.env['stock.picking.type'].search([
-            ('name', '=', 'Реверс'),
-            ('warehouse_id.company_id', '=', self.company_id.id),
+        # Resolve the Реверс picking type by stable sequence_code, matched to
+        # the warehouse the source location belongs to (raises if missing —
+        # no silent fallback). The wizard's source_location_id is the
+        # warehouse lot_stock_id resolved in _compute_source_location.
+        warehouse = self.env['stock.warehouse'].search([
+            ('company_id', '=', self.company_id.id),
         ], limit=1)
-
-        if not picking_type:
-            raise ValidationError(
-                _('Не е пронајден тип на операција "Реверс". '
-                  'Проверете дали модулот е правилно инсталиран.')
-            )
+        if not warehouse:
+            raise ValidationError(_('Не е пронајден магацин за тековната компанија.'))
+        picking_type = self.env['stock.picking.type']._eskon_reverse_type(
+            'reverse', warehouse, self.company_id,
+        )
 
         # Determine partner_id for the picking
         partner = False

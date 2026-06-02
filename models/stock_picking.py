@@ -2,6 +2,8 @@
 from odoo import api, fields, models, _
 from datetime import timedelta
 
+from .stock_picking_type import REVERSE_CODE
+
 
 class StockPicking(models.Model):
     _inherit = 'stock.picking'
@@ -47,16 +49,18 @@ class StockPicking(models.Model):
         store=False,
     )
 
-    @api.depends('picking_type_id', 'picking_type_id.name')
+    @api.depends('picking_type_id', 'picking_type_id.sequence_code')
     def _compute_is_reverse_picking(self):
         for picking in self:
-            picking.is_reverse_picking = picking.picking_type_id.name == 'Реверс'
+            picking.is_reverse_picking = (
+                picking.picking_type_id.sequence_code == REVERSE_CODE
+            )
 
     @api.depends('return_ids')
     def _compute_is_returned(self):
         for picking in self:
             # Check if this reverse has any completed returns
-            if picking.picking_type_id.name == 'Реверс':
+            if picking.picking_type_id.sequence_code == REVERSE_CODE:
                 picking.is_returned = bool(picking.return_ids.filtered(lambda r: r.state == 'done'))
             else:
                 picking.is_returned = False
@@ -83,7 +87,7 @@ class StockPicking(models.Model):
 
         # Find reverse pickings with return date approaching
         pickings_to_remind = self.search([
-            ('picking_type_id.name', '=', 'Реверс'),
+            ('picking_type_id.sequence_code', '=', REVERSE_CODE),
             ('state', '=', 'done'),
             ('return_date', '=', reminder_date),
             ('reminder_sent', '=', False),
@@ -111,7 +115,7 @@ class StockPicking(models.Model):
 
         # Also find overdue pickings
         overdue_pickings = self.search([
-            ('picking_type_id.name', '=', 'Реверс'),
+            ('picking_type_id.sequence_code', '=', REVERSE_CODE),
             ('state', '=', 'done'),
             ('return_date', '<', fields.Date.today()),
         ])
@@ -146,7 +150,7 @@ class StockPicking(models.Model):
         if self.borrower_type == 'partner' and self.partner_id:
             # Find or create partner location
             partner_location = self._get_or_create_partner_location(self.partner_id)
-            if partner_location and self.picking_type_id.name == 'Реверс':
+            if partner_location and self.picking_type_id.sequence_code == REVERSE_CODE:
                 self.location_dest_id = partner_location
 
     def _get_or_create_partner_location(self, partner):
