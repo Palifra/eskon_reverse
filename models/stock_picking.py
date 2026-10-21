@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from odoo import api, fields, models, _
+from odoo.exceptions import UserError
 from datetime import timedelta
 
 from .stock_picking_type import REVERSE_CODE
@@ -245,25 +246,120 @@ class StockPicking(models.Model):
 
         return True
 
+    # ── Примател ↔ дестинација: изведи, не претпоставувај ───────────────
+    # Рачно направен Реверс има три независни податоци (partner_id,
+    # borrower_type, location_dest_id на линијата) кои Odoo не ги споредува.
+    # Во прод тоа даде 10 реверси со примател X а залиха книжена кај првиот
+    # вработен од падачката листа. Овде секоја страна се ИЗВЕДУВА од другата,
+    # а валидацијата го одбива несовпаѓањето.
+    # Дизајн: docs/plans/2026-10-21-reverse-borrower-location-consistency-design.md
+
+    def _reverse_employees_for_partner(self, partner):
+        if not partner:
+            return self.env['hr.employee']
+        return self.env['hr.employee'].sudo().with_context(active_test=False).search(
+            [('work_contact_id', '=', partner.id)], limit=2)
+
+    def _reverse_employees_for_location(self, location):
+        if not location:
+            return self.env['hr.employee']
+        return self.env['hr.employee'].sudo().with_context(active_test=False).search(
+            [('stock_location_id', '=', location.id)], limit=2)
+
+    def _reverse_partners_for_location(self, location):
+        if not location:
+            return self.env['res.partner']
+        return self.env['res.partner'].sudo().with_context(active_test=False).search(
+            [('reverse_location_id', '=', location.id)], limit=2)
+
     @api.onchange('borrower_type', 'partner_id')
     def _onchange_borrower_partner(self):
-        """Resolve the partner's destination location through the central
-        Location Provider when a partner is selected on a Реверс picking.
+        """Derive the destination location from the selected Примател.
 
-        Routing through ``stock.location.provider`` — instead of a hand-rolled
-        ``Location.create`` here — gives one consistent path shared with the
-        issue wizard and esfsm_stock:
-          * the create is ``sudo``'d, so a normal ``stock.group_stock_user``
-            editing the picking does not hit AccessError on stock.location
-            create (was M12);
-          * the ``auto_create_partner_location`` setting is honoured, so a
-            disabled gate no longer litters the Партнери hierarchy (was L2);
-          * the location inherits the parent's company (was L3/L6) and dedups
-            exactly as the wizard does (was M7).
+        * ``partner`` type: the partner's own location through the central
+          Location Provider (sudo'd create, ``auto_create_partner_location``
+          honoured, company inherited, dedup by record id — M12/L2/L3/L6/M7).
+        * ``employee`` type: the employee whose ``work_contact_id`` is the
+          partner; their ``stock_location_id`` becomes the destination so the
+          move lines inherit it and nobody picks a name from a dropdown.
+          A contact that is not exactly one employee leaves the destination
+          untouched and warns — nothing is assumed.
         """
-        if (self.borrower_type == 'partner' and self.partner_id
-                and self.picking_type_id.sequence_code == REVERSE_CODE):
-            partner_location = self.env['stock.location.provider'].get_or_create_location(
+        if (self.picking_type_id.sequence_code != REVERSE_CODE
+                or not self.partner_id):
+            return
+        provider = self.env['stock.location.provider']
+        if self.borrower_type == 'partner':
+            partner_location = provider.get_or_create_location(
                 'partner', self.partner_id)
             if partner_location:
                 self.location_dest_id = partner_location
+            return
+        if self.borrower_type == 'employee':
+            employees = self._reverse_employees_for_partner(self.partner_id)
+            if len(employees) != 1:
+                return {'warning': {
+                    'title': _('Контактот не е вработен'),
+                    'message': _(
+                        '„%(partner)s“ не одговара на точно еден вработен. '
+                        'Избери вработен за примател или смени го типот на '
+                        'примател на „Партнер/Клиент“. Дестинацијата не е '
+                        'променета.', partner=self.partner_id.display_name),
+                }}
+            location = provider.get_or_create_location('employee', employees)
+            if location:
+                self.location_dest_id = location
+
+    @api.onchange('location_dest_id')
+    def _onchange_borrower_dest_location(self):
+        """Fill an empty Примател from a destination that belongs to exactly
+        one employee (or one partner). Never overwrites a set partner — the
+        validation step decides on a conflict, with both names."""
+        if (self.picking_type_id.sequence_code != REVERSE_CODE
+                or self.partner_id or not self.location_dest_id):
+            return
+        employees = self._reverse_employees_for_location(self.location_dest_id)
+        if len(employees) == 1 and employees.work_contact_id:
+            self.borrower_type = 'employee'
+            self.partner_id = employees.work_contact_id
+            return
+        partners = self._reverse_partners_for_location(self.location_dest_id)
+        if len(partners) == 1:
+            self.borrower_type = 'partner'
+            self.partner_id = partners
+
+    def _reverse_expected_partner(self, location):
+        """(expected res.partner, owner label) for a destination that is an
+        employee's or a partner's реверс location; (empty, '') otherwise."""
+        employees = self._reverse_employees_for_location(location)
+        if len(employees) == 1 and employees.work_contact_id:
+            return employees.work_contact_id, employees.name
+        partners = self._reverse_partners_for_location(location)
+        if len(partners) == 1:
+            return partners, partners.display_name
+        return self.env['res.partner'], ''
+
+    def _check_reverse_borrower_consistency(self):
+        """Server-side guard: every line destination that is a person's
+        location must belong to the Примател. Empty Примател is filled from
+        the destination; a different one is refused with both names."""
+        for picking in self.filtered(
+                lambda p: p.picking_type_id.sequence_code == REVERSE_CODE):
+            lines = picking.move_line_ids or picking.move_ids
+            for location in lines.mapped('location_dest_id'):
+                expected, owner = picking._reverse_expected_partner(location)
+                if not expected:
+                    continue
+                if picking.partner_id and picking.partner_id != expected:
+                    raise UserError(_(
+                        'Реверс %(name)s: примател е „%(partner)s“, а материјалот '
+                        'оди на локацијата на „%(owner)s“ (%(location)s). '
+                        'Исправи го примателот или дестинацијата на линијата.',
+                        name=picking.name, partner=picking.partner_id.display_name,
+                        owner=owner, location=location.complete_name))
+                if not picking.partner_id:
+                    picking.partner_id = expected
+
+    def button_validate(self):
+        self._check_reverse_borrower_consistency()
+        return super().button_validate()
