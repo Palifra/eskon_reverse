@@ -360,6 +360,32 @@ class StockPicking(models.Model):
                 if not picking.partner_id:
                     picking.partner_id = expected
 
+    def _check_reverse_leaves_source(self):
+        """Server-side guard: a Реверс must move the goods somewhere.
+
+        A line whose destination equals its source changes nothing in stock —
+        the material stays on the shelf in Odoo while physically it is gone.
+        In prod this happened when an FSM job had no technician yet: the
+        recipient became „Непознат“ and the destination fell back to the
+        warehouse (125 such реверси, e.g. ESGM/REV/2026/00733 — 2.000 m
+        cable for ЛТХ that never left ESGM/Залиха on paper).
+        A sub-location (e.g. „Терени техничари“) is a real move and allowed.
+        """
+        for picking in self.filtered(
+                lambda p: p.picking_type_id.sequence_code == REVERSE_CODE):
+            for line in (picking.move_line_ids or picking.move_ids):
+                if line.location_dest_id == line.location_id:
+                    raise UserError(_(
+                        'Реверс %(name)s: „%(product)s“ не излегува од '
+                        '„%(location)s“ — изворот и дестинацијата се исти, '
+                        'па материјалот на хартија би останал во магацинот. '
+                        'Избери примател (вработен, возило или партнер) со '
+                        'своја локација.',
+                        name=picking.name,
+                        product=line.product_id.display_name,
+                        location=line.location_id.complete_name))
+
     def button_validate(self):
+        self._check_reverse_leaves_source()
         self._check_reverse_borrower_consistency()
         return super().button_validate()

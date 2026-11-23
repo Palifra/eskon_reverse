@@ -137,3 +137,28 @@ class TestBorrowerConsistency(TransactionCase):
         pk.button_validate()
         self.assertEqual(pk.state, 'done')
         self.assertEqual(pk.partner_id, self.outsider)
+
+    # ── реверс што не излегува од магацинот (извор = дестинација) ─────────
+
+    def test_validate_refuses_same_source_and_destination(self):
+        """ESGM/REV/2026/00733: налог без техничар → примател „Непознат“,
+        дестинација = магацинот. Таков реверс не смее да се потврди."""
+        pk = self._picking(self.rev_type, self.stock_location, self.stock_location)
+        with self.assertRaisesRegex(UserError, 'изворот и дестинацијата се исти'):
+            pk.button_validate()
+        self.assertNotEqual(pk.state, 'done')
+
+    def test_validate_allows_sublocation_of_warehouse(self):
+        """Подлокација на магацинот (пр. „Терени техничари“) е вистинско
+        движење — не смее да се блокира."""
+        pk = self._picking(self.rev_type, self.stock_location,
+                           self.plain_location, partner=self.outsider)
+        pk.button_validate()
+        self.assertEqual(pk.state, 'done')
+
+    def test_return_with_same_location_is_not_checked(self):
+        """Проверката важи само за Реверс, не за Повратница."""
+        ret = self.ret_type
+        self.assertNotEqual(ret.sequence_code, self.rev_type.sequence_code)
+        pk = self._picking(ret, self.stock_location, self.stock_location)
+        pk._check_reverse_leaves_source()   # no raise
